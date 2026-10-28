@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>勤怠管理</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:-apple-system,"Hiragino Sans","Noto Sans JP",sans-serif;background:#f3f5f9;color:#222}
+header{background:#1e3a8a;color:#fff;padding:14px 20px;display:flex;justify-content:space-between;align-items:center}
+header h1{margin:0;font-size:20px}#clock{font-size:20px;font-variant-numeric:tabular-nums}
+nav{display:flex;gap:4px;padding:10px 20px 0}nav button{border:0;padding:10px 16px;border-radius:8px 8px 0 0;background:#dbe3f3;cursor:pointer;font-size:15px}
+nav button.on{background:#fff;font-weight:bold}
+main{background:#fff;margin:0 20px 20px;padding:20px;border-radius:0 8px 8px 8px;min-height:60vh}
+.sec{display:none}.sec.on{display:block}
+select,input{font-size:16px;padding:8px;border:1px solid #bbb;border-radius:6px}
+.btns{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin:18px 0}
+.btns button{font-size:20px;padding:22px 0;border:0;border-radius:10px;color:#fff;cursor:pointer}
+.in{background:#16a34a}.out{background:#dc2626}.bs{background:#f59e0b}.be{background:#0ea5e9}
+.btns button:disabled{opacity:.35;cursor:not-allowed}
+#status{font-size:18px;margin:8px 0}
+table{border-collapse:collapse;width:100%;margin-top:12px;font-size:14px}th,td{border:1px solid #ddd;padding:6px 8px;text-align:center}th{background:#eef2fa}
+.small{font-size:13px;color:#666}.b{padding:8px 14px;border:0;border-radius:6px;background:#1e3a8a;color:#fff;cursor:pointer;font-size:14px}
+.del{background:#999}.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0}
+</style></head><body>
+<header><h1>勤怠管理</h1><div id="clock"></div></header>
+<nav><button data-t="punch" class="on">打刻</button><button data-t="records">勤怠一覧</button><button data-t="staff">スタッフ</button></nav>
+<main>
+<section id="punch" class="sec on">
+ <div class="row">名前を選んでください： <select id="who"></select></div>
+ <div id="status"></div>
+ <div class="btns">
+  <button class="in" data-a="in">出勤</button><button class="bs" data-a="bs">休憩開始</button>
+  <button class="be" data-a="be">休憩終了</button><button class="out" data-a="out">退勤</button>
+ </div>
+ <h3>今日の打刻</h3><table id="today"></table>
+</section>
+<section id="records" class="sec">
+ <div class="row">対象月 <input type="month" id="month"> スタッフ <select id="rwho"></select>
+  <button class="b" id="csv">CSVで保存</button></div>
+ <table id="rtable"></table><div id="sum" style="margin-top:10px;font-weight:bold"></div>
+ <p class="small">時刻はクリックで修正できます（形式 HH:MM、空欄で削除）。</p>
+</section>
+<section id="staff" class="sec">
+ <div class="row"><input id="newname" placeholder="名前"><button class="b" id="add">追加</button></div>
+ <table id="stable"></table>
+ <h3>データのバックアップ</h3>
+ <div class="row"><button class="b" id="exp">バックアップを保存</button>
+ <label class="b">バックアップから復元<input type="file" id="imp" accept=".json" hidden></label></div>
+ <p class="small">データはこのブラウザ内に保存されます。別の端末へ移すときはバックアップをご利用ください。</p>
+</section>
+</main>
+<script>
+const K='kintai_v1';let D=JSON.parse(localStorage.getItem(K)||'{"staff":[],"rec":{}}');
+const save=()=>localStorage.setItem(K,JSON.stringify(D));
+const $=s=>document.querySelector(s),p2=n=>String(n).padStart(2,'0');
+const dkey=d=>`${d.getFullYear()}-${p2(d.getMonth()+1)}-${p2(d.getDate())}`,hm=d=>`${p2(d.getHours())}:${p2(d.getMinutes())}`;
+const L={in:'出勤',bs:'休憩開始',be:'休憩終了',out:'退勤'};
+setInterval(()=>{const n=new Date();$('#clock').textContent=n.toLocaleDateString('ja-JP',{month:'long',day:'numeric',weekday:'short'})+' '+n.toLocaleTimeString('ja-JP')},1000);
+document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{document.querySelectorAll('nav button,.sec').forEach(e=>e.classList.remove('on'));b.classList.add('on');$('#'+b.dataset.t).classList.add('on');render()});
+function day(n,k){D.rec[n]=D.rec[n]||{};return D.rec[n][k]=D.rec[n][k]||{in:'',out:'',breaks:[]}}
+const mins=t=>{if(!t)return null;const[h,m]=t.split(':').map(Number);return h*60+m};
+function calc(r){const a=mins(r.in),b=mins(r.out);let br=0;(r.breaks||[]).forEach(x=>{const s=mins(x.s),e=mins(x.e);if(s!=null&&e!=null)br+=Math.max(0,e-s)});
+ return{br,work:a!=null&&b!=null?Math.max(0,(b<a?b+1440:b)-a-br):null}}
+const fm=m=>m==null?'-':`${Math.floor(m/60)}:${p2(m%60)}`;
+function state(r){if(!r.in)return'none';if(r.out)return'done';const l=r.breaks[r.breaks.length-1];return l&&!l.e?'break':'work'}
+document.querySelectorAll('[data-a]').forEach(b=>b.onclick=()=>{const n=$('#who').value;if(!n)return alert('先にスタッフを登録してください');
+ const now=new Date(),r=day(n,dkey(now)),t=hm(now),a=b.dataset.a;
+ if(a==='in')r.in=t;if(a==='out')r.out=t;if(a==='bs')r.breaks.push({s:t,e:''});if(a==='be')r.breaks[r.breaks.length-1].e=t;
+ save();render()});
+function opts(sel,all){const v=sel.value;sel.innerHTML=(all?'<option value="">全員</option>':'')+D.staff.map(s=>`<option>${esc(s)}</option>`).join('');if([...sel.options].some(o=>o.value===v))sel.value=v}
+const esc=s=>s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function render(){opts($('#who'));opts($('#rwho'),1);
+ const n=$('#who').value,k=dkey(new Date()),r=n&&D.rec[n]&&D.rec[n][k]||{in:'',out:'',breaks:[]},st=state(r);
+ $('#status').textContent=n?{none:'未出勤です',work:'勤務中です',break:'休憩中です',done:'本日は退勤済みです'}[st]:'スタッフタブから名前を登録してください';
+ const en={in:st==='none',bs:st==='work',be:st==='break',out:st==='work'};document.querySelectorAll('[data-a]').forEach(b=>b.disabled=!n||!en[b.dataset.a]);
+ $('#today').innerHTML='<tr><th>名前</th><th>出勤</th><th>休憩</th><th>退勤</th><th>状態</th></tr>'+D.staff.map(s=>{const x=D.rec[s]&&D.rec[s][k];if(!x)return'';
+  return`<tr><td>${esc(s)}</td><td>${x.in}</td><td>${x.breaks.map(b=>b.s+'〜'+b.e).join('<br>')}</td><td>${x.out}</td><td>${{none:'',work:'勤務中',break:'休憩中',done:'退勤'}[state(x)]}</td></tr>`}).join('');
+ if(!$('#month').value){const d=new Date();$('#month').value=`${d.getFullYear()}-${p2(d.getMonth()+1)}`}
+ const rows=rowsFor();let tot=0;
+ $('#rtable').innerHTML='<tr><th>日付</th><th>名前</th><th>出勤</th><th>休憩開始</th><th>休憩終了</th><th>退勤</th><th>休憩</th><th>実働</th></tr>'+rows.map(([d,s,x])=>{const c=calc(x);tot+=c.work||0;const b=x.breaks[0]||{s:'',e:''};
+  const cell=(f,v)=>`<td contenteditable data-d="${d}" data-s="${esc(s)}" data-f="${f}">${v}</td>`;
+  return`<tr><td>${d}</td><td>${esc(s)}</td>${cell('in',x.in)}${cell('bs',b.s)}${cell('be',b.e)}${cell('out',x.out)}<td>${fm(c.br)}</td><td>${fm(c.work)}</td></tr>`}).join('');
+ $('#sum').textContent=`合計実働 ${fm(tot)}（${rows.length}件）`;
+ document.querySelectorAll('#rtable [contenteditable]').forEach(td=>td.onblur=()=>{const v=td.textContent.trim();if(v&&!/^\d{1,2}:\d{2}$/.test(v)){alert('HH:MM の形式で入力してください');return render()}
+  const x=day(td.dataset.s,td.dataset.d),f=td.dataset.f,vv=v?v.padStart(5,'0'):'';if(f==='in'||f==='out')x[f]=vv;else{x.breaks[0]=x.breaks[0]||{s:'',e:''};x.breaks[0][f==='bs'?'s':'e']=vv}save();render()});
+ $('#stable').innerHTML='<tr><th>名前</th><th></th></tr>'+D.staff.map((s,i)=>`<tr><td>${esc(s)}</td><td><button class="b del" onclick="delStaff(${i})">削除</button></td></tr>`).join('')}
+function rowsFor(){const m=$('#month').value,w=$('#rwho').value,out=[];(w?[w]:D.staff).forEach(s=>Object.entries(D.rec[s]||{}).forEach(([d,x])=>{if(d.startsWith(m))out.push([d,s,x])}));return out.sort((a,b)=>a[0]<b[0]?-1:a[0]>b[0]?1:a[1]<b[1]?-1:1)}
+$('#month').onchange=$('#rwho').onchange=$('#who').onchange=render;
+$('#add').onclick=()=>{const v=$('#newname').value.trim();if(!v)return;if(D.staff.includes(v))return alert('同じ名前がすでに登録されています');D.staff.push(v);$('#newname').value='';save();render()};
+window.delStaff=i=>{if(confirm(D.staff[i]+' さんを削除しますか？（打刻記録は残ります）')){D.staff.splice(i,1);save();render()}};
+const dl=(name,txt,type)=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([txt],{type}));a.download=name;a.click()};
+$('#csv').onclick=()=>{const rows=rowsFor().map(([d,s,x])=>{const c=calc(x);return[d,s,x.in,x.breaks.map(b=>b.s+'-'+b.e).join(' '),x.out,fm(c.br),fm(c.work)]});
+ dl(`勤怠_${$('#month').value}.csv`,'\ufeff'+[['日付','名前','出勤','休憩','退勤','休憩時間','実働'],...rows].map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\r\n'),'text/csv')};
+$('#exp').onclick=()=>dl('kintai_backup.json',JSON.stringify(D),'application/json');
+$('#imp').onchange=e=>{const f=e.target.files[0];if(!f)return;f.text().then(t=>{try{const d=JSON.parse(t);if(!d.staff||!d.rec)throw 0;if(confirm('現在のデータを上書きして復元しますか？')){D=d;save();render()}}catch{alert('ファイルを読み込めませんでした')}})};
+render();
+</script></body></html>
